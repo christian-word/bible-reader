@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="uk">
 <head>
   <meta charset="UTF-8" />
@@ -62,12 +62,21 @@
 
     async function loadBible() {
       try {
-        // Вставлена правильна ссылка на украинский перевод Библии
         const res = await fetch('https://raw.githubusercontent.com/christian-word/bible-reader/refs/heads/main/json/bible_ua.json');
-        bibleData = await res.json();
+        const rawData = await res.json();
+        
+        // Перевіряємо структуру даних
+        if (Array.isArray(rawData)) {
+          bibleData = rawData;
+        } else if (rawData.chapters && Array.isArray(rawData.chapters)) {
+          bibleData = rawData.chapters;
+        } else {
+          throw new Error('Неправильна структура JSON даних');
+        }
+        
         parseUrl();
       } catch (err) {
-        document.getElementById('content').innerHTML = '<p style="color:red">Помилка завантаження bible.json</p>';
+        document.getElementById('content').innerHTML = '<p style="color:red">Помилка завантаження даних: ' + err.message + '</p>';
         console.error(err);
       }
     }
@@ -96,6 +105,11 @@
 
     // === Відображаємо стихи ===
     function displayReference(ref) {
+      if (!bibleData) {
+        document.getElementById('content').innerHTML = '<p style="color:red">Дані Біблії не завантажені</p>';
+        return;
+      }
+
       const match = ref.match(/^(\d+),(\d+)(?::(\d+)(?:-(\d+))?)?$/);
       if (!match) {
         document.getElementById('content').innerHTML = '<p>Невірний формат. Приклад: <code>1,2:5-7</code></p>';
@@ -113,30 +127,56 @@
         return;
       }
 
-      const chapter = bibleData.find(ch => ch.book === bookName && ch.chapter === chapterNum);
+      // Шукаємо главу з урахуванням можливої структури даних
+      let chapter = null;
+      
+      // Спроба 1: оригінальна структура
+      if (!chapter) {
+        chapter = bibleData.find(ch => ch.book === bookName && ch.chapter === chapterNum);
+      }
+      
+      // Спроба 2: інша структура
+      if (!chapter) {
+        chapter = bibleData.find(ch => 
+          ch.book_number === bookNum && ch.chapter_number === chapterNum
+        );
+      }
+
       if (!chapter) {
         document.getElementById('content').innerHTML = `<p>Не знайдено: ${bookName} ${chapterNum}</p>`;
         return;
       }
 
       let html = '';
+      let verses = chapter.verses || chapter.verse_objects || [];
+      
       if (startVerse === null) {
         // Вся глава
         html += `<h2>${bookName} ${chapterNum}</h2>`;
-        chapter.verses.forEach(v => {
-          html += `<div class="verse"><span class="verse-num">${v.verse}</span> ${v.text}</div>`;
+        verses.forEach(v => {
+          const verseNum = v.verse || v.verse_number || v.number;
+          const verseText = v.text || v.content || '';
+          if (verseNum && verseText) {
+            html += `<div class="verse"><span class="verse-num">${verseNum}</span> ${verseText}</div>`;
+          }
         });
       } else {
         // Діапазон стихів
-        const verses = chapter.verses.filter(v =>
-          v.verse >= startVerse && (!endVerse || v.verse <= endVerse)
-        );
-        if (verses.length === 0) {
+        const filteredVerses = verses.filter(v => {
+          const verseNum = v.verse || v.verse_number || v.number;
+          return verseNum && verseNum >= startVerse && (!endVerse || verseNum <= endVerse);
+        });
+        
+        if (filteredVerses.length === 0) {
           html = `<p>Стихи не знайдені: ${ref}</p>`;
         } else {
           html += `<h2>${bookName} ${chapterNum}:${startVerse}${endVerse ? '-' + endVerse : ''}</h2>`;
-          verses.forEach(v => {
-            html += `<div class="verse"><span class="verse-num">${v.verse}</span> ${v.text}</div>`;
+          filteredVerses.forEach(v => {
+            const verseNum = v.verse || v.verse_number || v.number;
+            const verseText = v.text || v.content || '';
+            if (verseNum && verseText) {
+              html += `<div class="verse"><span class="verse-num">${verseNum}</span> ${verseText}</div>`;
+            }
           });
         }
       }
