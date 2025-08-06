@@ -1,0 +1,174 @@
+﻿<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Читалка Біблії</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 900px;
+      margin: 40px auto;
+      padding: 20px;
+      line-height: 1.8;
+      color: #333;
+    }
+    h1, h2 { color: #2c3e50; }
+    .nav { margin-bottom: 20px; padding: 15px; background: #f0f8ff; border-radius: 8px; }
+    .verse { margin: 8px 0; }
+    .verse-num { font-weight: bold; color: #c44; }
+    .interface-on .nav { display: block; }
+    .interface-off .nav { display: none; }
+    .ref-link { font-size: 0.9em; color: #555; }
+    .footer { margin-top: 40px; font-size: 0.9em; color: #777; text-align: center; }
+  </style>
+</head>
+<body class="interface-off">
+  <div class="nav">
+    <h2>📖 Читалка Біблії</h2>
+    <p>
+      <input type="text" id="ref-input" placeholder="Наприклад: 1,2:5-7" size="30" />
+      <button onclick="go()">Перейти</button>
+    </p>
+    <p class="ref-link">Поточне посилання: <code id="current-url"></code></p>
+  </div>
+
+  <div id="content"></div>
+
+  <div class="footer">
+    Читалка для українського перекладу Огієнка
+  </div>
+
+  <script>
+    // === Назви книг (в порядку Біблії) ===
+    const books = [
+      "Буття", "Вихід", "Левит", "Числа", "Повторення Закону",
+      "Ісус Навин", "Судді", "Руф", "1 Цар", "2 Цар",
+      "3 Цар", "4 Цар", "1 Летопис", "2 Летопис", "Ездра",
+      "Неемія", "Естер", "Йова", "Псалтир", "Пророки",
+      "Єремія", "Плач Єремії", "Послання до Вавилонян", "Єзекиїль", "Даніїл",
+      "Осія", "Йоель", "Амос", "Авдій", "Йона",
+      "Михей", "Наум", "Авакум", "Софонія", "Аггей",
+      "Захарія", "Малахія", "Матвія", "Марка", "Луки",
+      "Яна", "Дії", "Римлянам", "1 Коринф'янам", "2 Коринф'янам",
+      "Галатам", "Ефесянам", "Филимонові", "Колоссянам", "1 Солунянам",
+      "2 Солунянам", "1 Тимофію", "2 Тимофію", "Титові", "Филимонові",
+      "Євреям", "Яків", "1 Петра", "2 Петра", "1 Івана",
+      "2 Івана", "3 Івана", "Юди", "Об'явлення"
+    ];
+
+    // === Завантажуємо JSON з файлу ===
+    let bibleData = null;
+
+    async function loadBible() {
+      try {
+        // Вставлена правильна ссылка на украинский перевод Библии
+        const res = await fetch('https://raw.githubusercontent.com/christian-word/bible-reader/refs/heads/main/json/bible_ua.json');
+        bibleData = await res.json();
+        parseUrl();
+      } catch (err) {
+        document.getElementById('content').innerHTML = '<p style="color:red">Помилка завантаження bible.json</p>';
+        console.error(err);
+      }
+    }
+
+    // === Парсим URL ===
+    function parseUrl() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const ref = urlParams.get('ref');
+      const showInterface = urlParams.has('i') || urlParams.has('і') || urlParams.has('и');
+
+      if (showInterface) {
+        document.body.className = 'interface-on';
+      } else {
+        document.body.className = 'interface-off';
+      }
+
+      if (ref) {
+        displayReference(ref);
+        document.getElementById('ref-input').value = ref;
+      } else {
+        document.getElementById('content').innerHTML = '<p>Введіть посилання у форматі: <code>1,2:5-7</code></p>';
+      }
+
+      updateCurrentUrl();
+    }
+
+    // === Відображаємо стихи ===
+    function displayReference(ref) {
+      const match = ref.match(/^(\d+),(\d+)(?::(\d+)(?:-(\d+))?)?$/);
+      if (!match) {
+        document.getElementById('content').innerHTML = '<p>Невірний формат. Приклад: <code>1,2:5-7</code></p>';
+        return;
+      }
+
+      const bookNum = parseInt(match[1]);
+      const chapterNum = parseInt(match[2]);
+      const startVerse = match[3] ? parseInt(match[3]) : null;
+      const endVerse = match[4] ? parseInt(match[4]) : startVerse;
+
+      const bookName = books[bookNum - 1];
+      if (!bookName) {
+        document.getElementById('content').innerHTML = '<p>Книга не знайдена</p>';
+        return;
+      }
+
+      const chapter = bibleData.find(ch => ch.book === bookName && ch.chapter === chapterNum);
+      if (!chapter) {
+        document.getElementById('content').innerHTML = `<p>Не знайдено: ${bookName} ${chapterNum}</p>`;
+        return;
+      }
+
+      let html = '';
+      if (startVerse === null) {
+        // Вся глава
+        html += `<h2>${bookName} ${chapterNum}</h2>`;
+        chapter.verses.forEach(v => {
+          html += `<div class="verse"><span class="verse-num">${v.verse}</span> ${v.text}</div>`;
+        });
+      } else {
+        // Діапазон стихів
+        const verses = chapter.verses.filter(v =>
+          v.verse >= startVerse && (!endVerse || v.verse <= endVerse)
+        );
+        if (verses.length === 0) {
+          html = `<p>Стихи не знайдені: ${ref}</p>`;
+        } else {
+          html += `<h2>${bookName} ${chapterNum}:${startVerse}${endVerse ? '-' + endVerse : ''}</h2>`;
+          verses.forEach(v => {
+            html += `<div class="verse"><span class="verse-num">${v.verse}</span> ${v.text}</div>`;
+          });
+        }
+      }
+
+      document.getElementById('content').innerHTML = html;
+    }
+
+    // === Перехід за посиланням ===
+    function go() {
+      const input = document.getElementById('ref-input').value.trim();
+      const showInterface = document.body.classList.contains('interface-on') ? '&i' : '';
+      if (input) {
+        window.location.search = 'ref=' + encodeURIComponent(input) + showInterface;
+      }
+    }
+
+    // === Оновлення URL в інтерфейсі ===
+    function updateCurrentUrl() {
+      const ref = new URLSearchParams(window.location.search).get('ref') || '';
+      const showInterface = ['i', 'і', 'и'].some(param => new URLSearchParams(window.location.search).has(param));
+      const baseUrl = window.location.pathname + '?ref=' + encodeURIComponent(ref);
+      const fullUrl = showInterface ? baseUrl + '&i' : baseUrl;
+      document.getElementById('current-url').textContent = fullUrl;
+    }
+
+    // === Обробка Enter у полі ===
+    document.getElementById('ref-input').addEventListener('keypress', e => {
+      if (e.key === 'Enter') go();
+    });
+
+    // === Запуск ===
+    window.onload = loadBible;
+  </script>
+</body>
+</html>
